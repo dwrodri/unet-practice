@@ -2,7 +2,7 @@ import torchvision
 import itertools
 import pathlib
 import sys
-from typing import List, Tuple
+from typing import Tuple
 import logging
 
 import torch
@@ -153,10 +153,12 @@ def create_train_test_segmentation_datasets(
         raise UserWarning(
             f"number of images ({len(image_paths)}) and number of masks ({len(mask_paths)}) don't match"
         )
-    train_pairs, test_pairs = random_split(list(zip(image_paths, mask_paths)), lengths=[train_percent, 1.0-train_percent])
-    return SaltSeismologyDataset(*zip(*train_pairs)), SaltSeismologyDataset(*zip(*test_pairs))
-
-    
+    train_pairs, test_pairs = random_split(
+        list(zip(image_paths, mask_paths)), lengths=[train_percent, 1.0 - train_percent]
+    )
+    return SaltSeismologyDataset(*zip(*train_pairs)), SaltSeismologyDataset(
+        *zip(*test_pairs)
+    )
 
 
 def fit_unet(
@@ -194,16 +196,16 @@ def fit_unet(
             loss = 0.0
             for test_image_batch, test_ground_truth_mask_batch in test_loader:
                 test_generated_mask_batch = model(test_image_batch.cuda())
-                loss += loss_fn(test_generated_mask_batch, test_ground_truth_mask_batch.cuda()).cpu()
+                loss += loss_fn(
+                    test_generated_mask_batch, test_ground_truth_mask_batch.cuda()
+                ).cpu()
             logging.info(f"Test Loss: {loss}")
 
 
-                
-
-
-
 if __name__ == "__main__":
-    train_set, test_set = create_train_test_segmentation_datasets(*map(pathlib.Path, sys.argv[1:]))
+    train_set, test_set = create_train_test_segmentation_datasets(
+        *map(pathlib.Path, sys.argv[1:])
+    )
     fit_unet(
         model=UNet().cuda(),
         train_set=train_set,
