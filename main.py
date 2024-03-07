@@ -12,7 +12,7 @@ from PIL import Image
 from torch.utils.data import Dataset, DataLoader, random_split
 
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.ERROR)
 
 
 class SaltSeismologyDataset(Dataset):
@@ -40,7 +40,7 @@ class SaltSeismologyDataset(Dataset):
 
 class UNetConvBlock(torch.nn.Module):
     """
-    Simple chain of Conv2d -> ReLU -> Conv
+    Simple chain of Conv2d -> ReLU -> Conv2d
     """
 
     def __init__(self, input_channels: int, output_channels: int) -> None:
