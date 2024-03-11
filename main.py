@@ -25,16 +25,22 @@ class UNetConvBlock(torch.nn.Module):
     def __init__(self, input_channels: int, output_channels: int) -> None:
         super().__init__()
         self.first_conv = torch.nn.Conv2d(
-            in_channels=input_channels, out_channels=output_channels, kernel_size=3
+            in_channels=input_channels,
+            out_channels=output_channels,
+            kernel_size=3,
+            padding="same",
         )
         self.second_conv = torch.nn.Conv2d(
-            in_channels=output_channels, out_channels=output_channels, kernel_size=3
+            in_channels=output_channels,
+            out_channels=output_channels,
+            kernel_size=3,
+            padding="same",
         )
 
     def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         tensor = F.relu(self.first_conv(tensor))
         tensor = self.second_conv(tensor)
-        return tensor
+        return F.relu(tensor)
 
 
 class UNet(torch.nn.Module):
@@ -140,12 +146,14 @@ def create_train_test_segmentation_datasets(
         list(zip(image_paths, mask_paths)),  # type:ignore
         lengths=[train_percent, 1.0 - train_percent],
     )
-    # augmentations = [
-    #     torchvision.transforms.RandomHorizontalFlip(p=1.0),
-    #     torchvision.transforms.RandomVerticalFlip(p=1.0),
-    # ]
+    augmentations = [
+        torchvision.transforms.RandomHorizontalFlip(p=1.0),
+        torchvision.transforms.RandomVerticalFlip(p=1.0),
+    ]
     train_image_paths, train_mask_paths = zip(*train_pairs)
-    train_set = PetDataset(train_image_paths, train_mask_paths)
+    train_set = PetDataset(
+        train_image_paths, train_mask_paths, augmentations=augmentations
+    )
     test_image_paths, test_mask_paths = zip(*test_pairs)
     test_set = PetDataset(test_image_paths, test_mask_paths)
     return train_set, test_set
@@ -199,8 +207,9 @@ def fit_unet(
             logging.info(f"Epoch {epoch} Train Loss:{train_loss} Test Loss: {loss}")
             if loss < last_test_loss:
                 last_test_loss = loss
-    visualize_sample(test_set, model, limit=32)
-    torch.save(model, "unet_pets.pkl")
+                visualize_sample(test_set, model, limit=10)
+                torch.save(model, "unet_pets.pkl")
+    visualize_sample(test_set, model, limit=64)
 
 
 @torch.no_grad()
@@ -208,40 +217,47 @@ def visualize_sample(dataset: Dataset, model: UNet, limit: int = 64):
     demo_loader = DataLoader(
         dataset=dataset, shuffle=False, batch_size=1, pin_memory=True
     )
-    for i, (demo_image, demo_ground_truth_mask) in enumerate(tqdm(demo_loader)):
+    for i, (demo_image, demo_ground_truth_mask) in enumerate(demo_loader):
         demo_generated_mask = model(demo_image.cuda()).cpu().squeeze()
-        demo_generated_mask = (torch.sigmoid(demo_generated_mask) * 255).to(torch.uint8)
+        demo_generated_mask = torch.clamp(
+            (torch.sigmoid(demo_generated_mask) * 255), min=0, max=255
+        ).to(torch.uint8)
+        demo_generated_mask_rgb = torch.stack([demo_generated_mask] * 3)
+        demo_ground_truth_mask_rgb = torch.stack([demo_ground_truth_mask.squeeze()] * 3)
         side_by_side = torch.cat(
-            [
-                demo_generated_mask.squeeze(),
-                demo_ground_truth_mask.squeeze(),
-            ],
+            [demo_image.squeeze(), demo_generated_mask_rgb, demo_ground_truth_mask_rgb],
             dim=1,
         )
         comparison_image: Image.Image = torchvision.transforms.ToPILImage()(
             side_by_side
         )
-        demo_input: Image.Image = torchvision.transforms.ToPILImage()(
-            demo_image.squeeze()
-        )
-        demo_input.save(f"demo/input_{i}.png")
-        comparison_image.save(f"demo/result_{i}.png")
+        comparison_image.save(f"demo/{i}.png")
         i += 1
         if i >= limit:
             break
 
 
 if __name__ == "__main__":
+    # parse CLI input
+    if len(sys.argv) != 3 or sys.argv[1] in ["-h", "--help", "-help"]:
+        logging.critical(
+            "Usage: python3 main.py /path/to/training/images/ /path/to/training/masks"
+        )
+        sys.exit()
     images_folder, masks_folder = map(pathlib.Path, sys.argv[1:3])
+
     train_set, test_set = create_train_test_segmentation_datasets(
         images_folder, masks_folder, 0.90
     )
-    # model: UNet = torch.load("unet_augmented.pkl")
-    # visualize_sample(train_set, model)
+
+    # Uncomment these lines to get samples from your pre-trained model
+    # model: UNet = torch.load("unet_pets.pkl")
+    # visualize_sample(test_set, model)
+
     fit_unet(
-        model=UNet(encoder_channel_stages=[3, 64, 128, 256, 512]).cuda(),
+        model=UNet(encoder_channel_stages=[3, 64, 128, 256, 512, 1024]).cuda(),
         train_set=train_set,
         test_set=test_set,
         batch_size=64,
-        num_epochs=80,
+        num_epochs=50,
     )
