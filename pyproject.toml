@@ -2,8 +2,8 @@
 name = "unet-practice"
 version = "0.1.0"
 description = ""
-authors = ["Derek Rodriguez <derek.rodriguez@pm.me>"]
-license = "MIT"
+authors = ["Derek Rodriguez <derek@derekrodriguez.dev>"]
+license = "Apache 2.0"
 readme = "README.md"
 
 [tool.poetry.dependencies]
